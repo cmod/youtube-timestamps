@@ -5,14 +5,13 @@ Generate chapter timestamps for any YouTube video — just give it a URL.
 Transcribes with OpenAI Whisper, analyzes topics with GPT-4, and outputs YouTube-ready chapter markers you can paste directly into a video description.
 
 ```
-00:00:00 - Welcome and course overview
-00:01:15 - Installing Python and VS Code
-00:04:30 - Your first Python program
-00:08:45 - Variables and data types
-00:13:20 - Control flow and conditionals
-00:18:00 - Functions and code reusability
-00:23:15 - Introduction to object-oriented programming
-00:27:30 - Next steps and resources
+00:00:00 - Arriving in Tokyo at dawn
+00:03:42 - Morning coffee at a kissaten in Yanaka
+00:11:17 - Exploring old shotengai backstreets
+00:28:05 - Lunch: ramen in Shinjuku
+00:41:33 - Bullet train south to Kyoto
+00:58:12 - Golden hour at Fushimi Inari
+01:14:45 - Dinner and sake in Gion
 ```
 
 ## Features
@@ -142,19 +141,19 @@ For videos with a **presentation followed by audience Q&A**, use `--qa-mode` for
 **Without Q&A mode** (generic chapters):
 ```
 00:00:00 - Introduction
-00:05:00 - Part 1
-00:10:00 - Part 2
-00:15:00 - Part 3
+00:18:30 - The walk begins
+00:44:15 - Crossing the mountain pass
+01:09:00 - Arriving at the coast
 ```
 
 **With Q&A mode** (per-question timestamps):
 ```
-00:00:00 - Presentation
-00:20:45 - Q&A begins
-00:21:10 - Q: How do you handle project delays and timeline adjustments?
-00:24:30 - Q: What's the budget allocation for next quarter?
-00:28:15 - Q: Team expansion plans and hiring priorities
-00:31:45 - Q: How are remote work policies changing?
+00:00:00 - Walking 1000km across Japan
+00:47:23 - Q&A begins
+00:47:58 - Q: How do you decide when a photo is finished?
+00:51:30 - Q: What camera gear did you carry for 1000km?
+00:55:12 - Q: How do you stay motivated on long solo walks?
+00:59:44 - Q: Advice for someone planning their first long walk?
 ```
 
 **Use Q&A mode for:** board meetings, conference talks, webinars, town halls — any video with a structured presentation → Q&A format.
@@ -165,12 +164,12 @@ All files are saved to the `output/` directory:
 
 **`[Video Title]_timestamps.txt`** — YouTube-ready chapter markers:
 ```
-Video: Introduction to Python Programming
-Duration: 28m 45s
+Video: Walking Across Japan
+Duration: 1h 18m 32s
 
 Chapters:
-00:00:00 - Welcome and course overview
-00:01:15 - Installing Python and VS Code
+00:00:00 - Arriving in Tokyo at dawn
+00:03:42 - Morning coffee at a kissaten in Yanaka
 ...
 ```
 
