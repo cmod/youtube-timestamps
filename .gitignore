@@ -36,6 +36,9 @@ temp/
 # Output files
 output/
 
+# Internal planning docs
+docs/
+
 # IDE / editor
 .vscode/
 .idea/
