@@ -1,0 +1,21 @@
+# YouTube Timestamps Configuration
+
+transcription:
+  model: whisper-1
+  response_format: verbose_json
+  language: null  # Auto-detect language
+
+topic_analysis:
+  model: gpt-4-turbo-preview  # Alternative: gpt-3.5-turbo for lower cost
+  temperature: 0.3
+  min_topic_duration: 30  # Minimum seconds between topics
+
+audio:
+  format: mp3
+  chunk_size_mb: 20  # Maximum audio chunk size (Whisper limit is 25MB)
+  chunk_duration: 600  # 10 minutes in seconds
+  sample_rate: 16000  # Optimal for Whisper
+
+output:
+  directory: output
+  default_filename: timestamps.txt

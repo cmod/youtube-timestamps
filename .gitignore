@@ -1,0 +1,49 @@
+# Environment variables
+.env
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Python
+*.pyc
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Cache
+cache/
+
+# Temporary files
+temp/
+*.tmp
+
+# yt-dlp partial/metadata files
+*.part
+*.ytdl
+*.mp4
+*.webm
+*.m4a
+
+# Output files
+output/
+
+# IDE / editor
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
