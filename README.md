@@ -1,17 +1,23 @@
 # youtube-timestamps
 
+Making timestamps/chapters from a YouTube video feels like the world's worst homework. Can we use the magic of LLMs to make this less horrible and yet … good? Yes. Yes we can. 
+
+Here you go:
+
+---
+
 Generate chapter timestamps for any YouTube video — just give it a URL.
 
 Transcribes with OpenAI Whisper, analyzes topics with GPT-4, and outputs YouTube-ready chapter markers you can paste directly into a video description.
 
 ```
-00:00:00 - Arriving in Tokyo at dawn
-00:03:42 - Morning coffee at a kissaten in Yanaka
-00:11:17 - Exploring old shotengai backstreets
-00:28:05 - Lunch: ramen in Shinjuku
-00:41:33 - Bullet train south to Kyoto
-00:58:12 - Golden hour at Fushimi Inari
-01:14:45 - Dinner and sake in Gion
+00:00:00 - Welcome
+00:03:42 - Presentation starts
+00:11:17 - Q&A Begins
+00:28:05 - What's the best place to each chicken ramen in Tokyo?
+00:41:33 - Why does every middle aged white guy want to buy abandoned farmhouse in a dying village in Japan?
+00:58:12 - What's the most you ever lost in a coin toss?
+01:14:45 - Is this a butterfly?
 ```
 
 ## Features
