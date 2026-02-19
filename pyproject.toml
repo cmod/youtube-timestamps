@@ -35,8 +35,8 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/craigmod/youtube-timestamps"
-"Bug Tracker" = "https://github.com/craigmod/youtube-timestamps/issues"
+Repository = "https://github.com/cmod/youtube-timestamps"
+"Bug Tracker" = "https://github.com/cmod/youtube-timestamps/issues"
 
 [project.scripts]
 youtube-timestamps = "main:main"

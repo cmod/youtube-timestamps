@@ -7,7 +7,7 @@ This is a personal project — I'm not actively seeking contributors, but bug fi
 **Requirements:** Python 3.9+, ffmpeg, [uv](https://docs.astral.sh/uv/)
 
 ```bash
-git clone https://github.com/craigmod/youtube-timestamps
+git clone https://github.com/cmod/youtube-timestamps
 cd youtube-timestamps
 uv sync
 cp .env.example .env

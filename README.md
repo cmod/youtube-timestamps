@@ -36,7 +36,7 @@ Transcribes with OpenAI Whisper, analyzes topics with GPT-4, and outputs YouTube
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/craigmod/youtube-timestamps
+git clone https://github.com/cmod/youtube-timestamps
 cd youtube-timestamps
 uv sync
 
