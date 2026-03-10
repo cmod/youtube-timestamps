@@ -65,9 +65,9 @@ def estimate_cost(duration_seconds: float) -> str:
     help='Save full transcript to file (default: enabled)'
 )
 @click.option(
-    '--qa-mode',
-    is_flag=True,
-    help='Optimize for presentation + Q&A format (detailed Q&A timestamps)'
+    '--qa-mode/--no-qa-mode',
+    default=True,
+    help='Optimize for presentation + Q&A format (default: enabled, use --no-qa-mode to disable)'
 )
 @click.option(
     '--force-reprocess',
