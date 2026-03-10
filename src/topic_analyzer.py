@@ -108,7 +108,7 @@ class TopicAnalyzer:
         formatted_transcript = self._format_for_gpt(intervals)
 
         # Create analysis prompt
-        prompt = self._create_analysis_prompt(formatted_transcript, video_title)
+        prompt = self._create_analysis_prompt(formatted_transcript, video_title, int(video_duration))
 
         try:
             # Call GPT-4 for analysis
@@ -730,7 +730,7 @@ CRITICAL:
 
         return '\n'.join(lines)
 
-    def _create_analysis_prompt(self, transcript: str, video_title: str = "") -> str:
+    def _create_analysis_prompt(self, transcript: str, video_title: str = "", video_duration: int = 0) -> str:
         """Create the prompt for GPT analysis.
 
         Args:
@@ -786,7 +786,8 @@ CRITICAL:
 
         else:
             # Standard prompt for general videos
-            prompt = f"""You are analyzing a video transcript to create meaningful YouTube chapter timestamps.{title_context}
+            duration_context = f"\nVideo duration: {video_duration} seconds ({video_duration // 60}m {video_duration % 60}s)" if video_duration else ""
+            prompt = f"""You are analyzing a video transcript to create meaningful YouTube chapter timestamps.{title_context}{duration_context}
 
 CRITICAL INSTRUCTIONS:
 1. READ THE ENTIRE TRANSCRIPT CAREFULLY - analyze the actual content, topics discussed, questions asked, etc.
@@ -797,6 +798,7 @@ CRITICAL INSTRUCTIONS:
 6. Timestamps should be in SECONDS (integers only - not "20:00" format)
 7. Only include topics lasting at least {self.min_topic_duration} seconds
 8. Always start with timestamp 0 for the introduction/opening
+9. Your chapters MUST cover the FULL video duration — do not stop early
 
 TRANSCRIPT TO ANALYZE:
 {transcript}
@@ -814,6 +816,7 @@ REQUIRED OUTPUT FORMAT (JSON only):
 IMPORTANT:
 - Use integer seconds for timestamps (0, 125, 380) NOT time format (0:00, 2:05)
 - Base descriptions on ACTUAL content from the transcript
+- Cover the entire video — the last chapter should be near {video_duration} seconds
 - Return ONLY the JSON object, no other text"""
 
         return prompt
