@@ -188,7 +188,7 @@ class TopicAnalyzer:
         logger.info(f"Video duration: {video_duration}s ({video_duration/60:.1f} minutes)")
         broad_intervals = transcriber.get_transcript_at_intervals(transcript, interval=120)  # 2-minute intervals
 
-        qa_start_time = self._find_qa_start(broad_intervals, video_title)
+        qa_start_time = self._find_qa_start(broad_intervals, video_title, video_duration)
 
         if qa_start_time is None:
             logger.warning("Could not identify Q&A start, analyzing entire video")
@@ -392,13 +392,15 @@ class TopicAnalyzer:
     def _find_qa_start(
         self,
         intervals: List[Tuple[float, str]],
-        video_title: str
+        video_title: str,
+        video_duration: int = 0
     ) -> Optional[int]:
         """Find where Q&A section starts.
 
         Args:
             intervals: List of (timestamp, text) tuples
             video_title: Video title
+            video_duration: Total video duration in seconds (for validation)
 
         Returns:
             Timestamp in seconds where Q&A starts, or None
@@ -408,11 +410,15 @@ class TopicAnalyzer:
         # the first hour used to mis-detect Q&A start on longer presentations.
         condensed = self._format_for_gpt(intervals)
 
+        # NOTE: we ask for the LITERAL [MM:SS] marker and convert ourselves —
+        # asking the model to convert to seconds produced wildly wrong values
+        # (e.g. 13500s on a 90-minute video), same lesson as the QA-detail
+        # prompt.
         prompt = f"""Analyze this video transcript to find where the Q&A session begins.
 
 Video Title: {video_title}
 
-The video has a presentation followed by a Q&A session. Find the timestamp where Q&A starts.
+The video has a presentation followed by a Q&A session. Find where Q&A starts.
 Look for phrases like:
 - "questions"
 - "Q&A"
@@ -421,17 +427,20 @@ Look for phrases like:
 - "anyone have questions"
 - Speaker starts answering questions
 
-Transcript (first portion):
+Transcript (each line begins with its [MM:SS] marker):
 {condensed}
 
-Return JSON with the Q&A start time:
+Return JSON with the Q&A start:
 {{
-  "qa_start_seconds": 1250,
+  "time_marker": "[36:00]",
   "confidence": "high",
   "indicator": "Speaker says 'let's open it up for questions'"
 }}
 
-If you cannot find clear Q&A indicators, return your best estimate or null for qa_start_seconds."""
+CRITICAL:
+- Return the LITERAL [MM:SS] marker from the transcript line where Q&A begins
+- DO NOT convert to seconds - just copy the marker exactly as it appears
+- If you cannot find clear Q&A indicators, return null for time_marker"""
 
         try:
             response = self.client.chat.completions.create(
@@ -447,8 +456,16 @@ If you cannot find clear Q&A indicators, return your best estimate or null for q
             content = response.choices[0].message.content
             data = json.loads(content)
 
-            qa_start = data.get('qa_start_seconds')
-            if qa_start is not None:
+            marker = data.get('time_marker') or data.get('qa_start_seconds')
+            if marker is not None:
+                qa_start = self._parse_timestamp(str(marker).strip().strip('[]'))
+                # Sanity check: a start beyond the video means the model
+                # hallucinated — treat as detection failure, not truth.
+                if video_duration and qa_start > video_duration:
+                    logger.warning(
+                        f"Q&A start {qa_start}s is beyond video duration "
+                        f"{video_duration}s — ignoring detection")
+                    return None
                 logger.info(f"Detected Q&A start: {data.get('indicator', 'unknown indicator')}")
                 return int(qa_start)
 
@@ -562,7 +579,11 @@ Return JSON with ALL questions:
 }}
 
 CRITICAL:
-- Find EVERY question - there should be 10+ questions
+- Find EVERY question - there are usually 15-25 in a session this length
+- MISSING A QUESTION IS THE WORST FAILURE MODE. Scan all the way to the very
+  END of the transcript - questions continue until the video ends
+- Include short/casual/lighthearted questions too (about clothing, food,
+  drinks, habits, small talk) - members search for these as much as big ones
 - Return the LITERAL [MM:SS] marker from the transcript (e.g., "[40:15]")
 - DO NOT convert to seconds - just copy the marker exactly as it appears
 - Be specific in descriptions
