@@ -57,6 +57,24 @@ class TimestampFormatter:
 
         return " ".join(parts)
 
+    @staticmethod
+    def dedupe_timestamps(topics: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
+        """Drop later entries that repeat an earlier timestamp.
+
+        GPT occasionally returns two chapters at the same [MM:SS]; YouTube
+        silently ignores chapter lists that aren't strictly increasing, so a
+        single duplicate can break ALL chapters on the video.
+        """
+        seen = set()
+        out = []
+        for ts, desc in topics:
+            if ts in seen:
+                logger.warning(f"Dropping duplicate timestamp {ts}s: {desc}")
+                continue
+            seen.add(ts)
+            out.append((ts, desc))
+        return out
+
     def validate_timestamps(self, topics: List[Tuple[int, str]]) -> bool:
         """Validate that timestamps are in chronological order.
 
@@ -95,6 +113,9 @@ class TimestampFormatter:
             Formatted string ready for YouTube description
         """
         logger.info(f"Formatting {len(topics)} timestamps for YouTube")
+
+        # Dedupe first — a repeated timestamp breaks YouTube's chapter parsing.
+        topics = self.dedupe_timestamps(topics)
 
         # Validate timestamps
         if not self.validate_timestamps(topics):
@@ -140,6 +161,7 @@ class TimestampFormatter:
         Returns:
             Markdown formatted string
         """
+        topics = self.dedupe_timestamps(topics)
         lines = []
 
         # Add title
@@ -172,6 +194,7 @@ class TimestampFormatter:
         """
         import json
 
+        topics = self.dedupe_timestamps(topics)
         chapters = []
         for timestamp, description in topics:
             chapters.append({

@@ -49,13 +49,19 @@ class WhisperTranscriber:
         for attempt in range(self.max_retries):
             try:
                 with open(audio_path, 'rb') as audio_file:
-                    # Call Whisper API with verbose JSON for timestamps
-                    response = self.client.audio.transcriptions.create(
+                    # Call Whisper API with verbose JSON for timestamps.
+                    # NOTE: whisper-1 is deliberate — the newer gpt-4o-transcribe
+                    # models do NOT return word-level timestamps, which this
+                    # whole pipeline depends on. Don't "upgrade" this.
+                    kwargs = dict(
                         model=self.model,
                         file=audio_file,
                         response_format="verbose_json",
-                        timestamp_granularities=["word"]
+                        timestamp_granularities=["word"],
                     )
+                    if language:
+                        kwargs['language'] = language
+                    response = self.client.audio.transcriptions.create(**kwargs)
 
                 # Convert response to dictionary
                 transcript_data = {
@@ -264,7 +270,8 @@ class WhisperTranscriber:
 
         logger.info(f"Raw transcript JSON saved to: {output_file}")
 
-    def format_transcript_with_timestamps(self, transcript: Dict, interval: int = 60) -> str:
+    @staticmethod
+    def format_transcript_with_timestamps(transcript: Dict, interval: int = 60) -> str:
         """Format transcript with timestamps at regular intervals.
 
         Args:
@@ -305,46 +312,33 @@ class WhisperTranscriber:
 
         return ' '.join(formatted_lines)
 
+    @staticmethod
     def get_transcript_at_intervals(
-        self,
         transcript: Dict,
         interval: int = 30
     ) -> List[Tuple[float, str]]:
         """Extract transcript text at regular time intervals.
+
+        Single pass over the words (the old per-interval scan was
+        O(words x intervals) — millions of comparisons on a 2h video).
 
         Args:
             transcript: Transcript dictionary with word timestamps
             interval: Seconds between intervals (default: 30)
 
         Returns:
-            List of (timestamp, text) tuples for each interval
+            List of (timestamp, text) tuples for each non-empty interval
         """
-        if not transcript.get('words'):
-            return [(0, transcript.get('text', ''))]
-
-        intervals = []
-        words = transcript['words']
-
+        words = transcript.get('words') or []
         if not words:
             return [(0, transcript.get('text', ''))]
 
-        # Determine total duration
-        max_time = words[-1]['end']
-        num_intervals = int(max_time // interval) + 1
+        buckets: Dict[int, List[str]] = {}
+        for word_data in words:
+            bucket = int(word_data['start'] // interval) * interval
+            buckets.setdefault(bucket, []).append(word_data['word'])
 
-        for i in range(num_intervals):
-            start_time = i * interval
-            end_time = (i + 1) * interval
-
-            # Collect words in this interval
-            interval_words = [
-                word_data['word']
-                for word_data in words
-                if start_time <= word_data['start'] < end_time
-            ]
-
-            if interval_words:
-                text = ' '.join(interval_words).strip()
-                intervals.append((start_time, text))
-
-        return intervals
+        return [
+            (start, ' '.join(bucket_words).strip())
+            for start, bucket_words in sorted(buckets.items())
+        ]

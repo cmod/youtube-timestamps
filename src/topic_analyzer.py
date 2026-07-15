@@ -18,7 +18,7 @@ class TopicAnalyzer:
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4-turbo-preview",
+        model: str = "gpt-4o",
         temperature: float = 0.3,
         min_topic_duration: int = 30,
         qa_mode: bool = False,
@@ -29,7 +29,7 @@ class TopicAnalyzer:
 
         Args:
             api_key: OpenAI API key
-            model: Model to use (default: gpt-4-turbo-preview for OpenAI, gemini-2.0-flash-exp for Gemini)
+            model: Model to use (default: gpt-4o for OpenAI, gemini-2.5-flash for Gemini)
             temperature: Sampling temperature (default: 0.3)
             min_topic_duration: Minimum duration for topics in seconds (default: 30)
             qa_mode: If True, optimizes for presentation + Q&A format (default: False)
@@ -50,8 +50,9 @@ class TopicAnalyzer:
             if not google_api_key:
                 raise ValueError("Google API key required when using Gemini provider")
             self.client = genai.Client(api_key=google_api_key)
-            # Use gemini-2.5-flash (latest) or gemini-2.0-flash as fallback
-            self.model = model if model != "gpt-4-turbo-preview" else "gemini-2.5-flash"
+            # config.yaml carries an OpenAI model name; swap in the Gemini
+            # default rather than sending a GPT model id to Gemini.
+            self.model = model if not model.startswith("gpt") else "gemini-2.5-flash"
             logger.info(f"Using Gemini model: {self.model}")
         else:
             raise ValueError(f"Unknown provider: {provider}. Use 'openai' or 'gemini'")
@@ -72,9 +73,10 @@ class TopicAnalyzer:
         """
         logger.info("Analyzing transcript for topic changes")
 
-        # Get intervals with text for analysis
+        # The transcriber's interval helpers are static utilities — no client
+        # or API key needed, so pass the class itself.
         from src.transcriber import WhisperTranscriber
-        transcriber = WhisperTranscriber(api_key="dummy")  # Just for utility method
+        transcriber = WhisperTranscriber
 
         # For Gemini, use full transcript analysis
         if self.provider == "gemini":
@@ -97,6 +99,7 @@ class TopicAnalyzer:
             logger.info(f"Using {interval}s intervals for {video_duration/60:.1f} min video")
         else:
             interval = 30
+            video_duration = 0  # unknown — no word timestamps to measure from
 
         intervals = transcriber.get_transcript_at_intervals(transcript, interval=interval)
 
@@ -132,18 +135,7 @@ class TopicAnalyzer:
 
             # Parse response
             content = response.choices[0].message.content
-
-            # Save response to debug file
-            try:
-                from pathlib import Path
-                debug_dir = Path("temp/debug")
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                debug_file = debug_dir / "gpt_response.json"
-                with open(debug_file, 'w') as f:
-                    f.write(content)
-                logger.info(f"GPT response saved to: {debug_file}")
-            except Exception as e:
-                logger.warning(f"Failed to save debug file: {e}")
+            self._save_debug("gpt_response.json", content)
 
             logger.debug(f"GPT response preview: {content[:500]}...")
             topics = self._parse_gpt_response(content)
@@ -232,20 +224,11 @@ class TopicAnalyzer:
                     )
 
                     content = response.choices[0].message.content
+                    self._save_debug("gpt_presentation_response.json", content)
                     presentation_topics = self._parse_gpt_response(content)
 
                     # Filter out any timestamps beyond Q&A start or video duration
                     presentation_topics = [(ts, desc) for ts, desc in presentation_topics if ts < qa_start_time and ts <= video_duration]
-
-                    # Save debug
-                    try:
-                        from pathlib import Path
-                        debug_dir = Path("temp/debug")
-                        debug_dir.mkdir(parents=True, exist_ok=True)
-                        with open(debug_dir / "gpt_presentation_response.json", 'w') as f:
-                            f.write(content)
-                    except:
-                        pass
 
                     logger.info(f"✓ Identified {len(presentation_topics)} presentation chapters")
                 except Exception as e:
@@ -295,23 +278,13 @@ class TopicAnalyzer:
             )
 
             content = response.choices[0].message.content
+            self._save_debug("gpt_qa_response.json", content)
 
-            # Save debug output
-            try:
-                from pathlib import Path
-                debug_dir = Path("temp/debug")
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                with open(debug_dir / "gpt_qa_response.json", 'w') as f:
-                    f.write(content)
-                logger.info(f"GPT Q&A response saved to: temp/debug/gpt_qa_response.json")
-            except:
-                pass
-
-            qa_topics = self._parse_gpt_response(content)
+            qa_topics_all = self._parse_gpt_response(content)
 
             # Filter out any timestamps beyond video duration
-            qa_topics = [(ts, desc) for ts, desc in qa_topics if ts <= video_duration]
-            invalid_count = len(self._parse_gpt_response(content)) - len(qa_topics)
+            qa_topics = [(ts, desc) for ts, desc in qa_topics_all if ts <= video_duration]
+            invalid_count = len(qa_topics_all) - len(qa_topics)
             if invalid_count > 0:
                 logger.warning(f"Filtered out {invalid_count} Q&A timestamps beyond video duration ({video_duration}s)")
 
@@ -388,17 +361,7 @@ class TopicAnalyzer:
             )
 
             content = response.text
-
-            # Save debug
-            try:
-                from pathlib import Path
-                debug_dir = Path("temp/debug")
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                with open(debug_dir / "gemini_response.json", 'w') as f:
-                    f.write(content)
-                logger.info(f"Gemini response saved to: temp/debug/gemini_response.json")
-            except:
-                pass
+            self._save_debug("gemini_response.json", content)
 
             topics = self._parse_gpt_response(content)
 
@@ -440,8 +403,10 @@ class TopicAnalyzer:
         Returns:
             Timestamp in seconds where Q&A starts, or None
         """
-        # Create condensed transcript for Q&A detection
-        condensed = self._format_for_gpt(intervals[:30])  # First ~60 minutes
+        # Condensed transcript for Q&A detection. Use ALL 2-minute intervals —
+        # a 2h video is only ~60 lines, easily within context, and capping at
+        # the first hour used to mis-detect Q&A start on longer presentations.
+        condensed = self._format_for_gpt(intervals)
 
         prompt = f"""Analyze this video transcript to find where the Q&A session begins.
 
@@ -483,7 +448,7 @@ If you cannot find clear Q&A indicators, return your best estimate or null for q
             data = json.loads(content)
 
             qa_start = data.get('qa_start_seconds')
-            if qa_start:
+            if qa_start is not None:
                 logger.info(f"Detected Q&A start: {data.get('indicator', 'unknown indicator')}")
                 return int(qa_start)
 
@@ -713,6 +678,17 @@ CRITICAL:
 
         return prompt
 
+    def _save_debug(self, name: str, content: str):
+        """Persist a raw model response to temp/debug/ (best-effort)."""
+        try:
+            from pathlib import Path
+            debug_dir = Path("temp/debug")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            (debug_dir / name).write_text(content)
+            logger.debug(f"Model response saved to: temp/debug/{name}")
+        except Exception as e:
+            logger.warning(f"Failed to save debug file {name}: {e}")
+
     def _format_for_gpt(self, intervals: List[Tuple[float, str]]) -> str:
         """Format transcript intervals for GPT analysis.
 
@@ -922,8 +898,15 @@ IMPORTANT:
                 # Last topic - assume it's long enough
                 duration = self.min_topic_duration + 1
 
+            # Q&A items are exempt from the duration filter: rapid-fire
+            # questions land closer together than min_topic_duration, and the
+            # whole point of qa_mode is one timestamp per question. (This also
+            # protects the "Q&A begins" marker when the first question follows
+            # within seconds.)
+            is_qa_item = description.startswith('Q:') or description.lower().startswith('q&a')
+
             # Keep topics that meet minimum duration
-            if duration >= self.min_topic_duration:
+            if is_qa_item or duration >= self.min_topic_duration:
                 filtered.append((timestamp, description))
             else:
                 logger.debug(f"Filtered out short topic ({duration}s): {description}")

@@ -32,11 +32,17 @@ def estimate_cost(duration_seconds: float) -> str:
         Cost estimate string
     """
     duration_minutes = duration_seconds / 60
-    whisper_cost = duration_minutes * 0.006  # $0.006 per minute
-    gpt_cost = 0.02  # ~$0.02 per video
+    whisper_cost = duration_minutes * 0.006  # whisper-1: $0.006 per minute
+    gpt_cost = 0.02  # rough per-video analysis cost (gpt-4o)
     total_cost = whisper_cost + gpt_cost
 
     return f"${total_cost:.2f}"
+
+
+def safe_filename(title: str) -> str:
+    """Filesystem-safe filename stem derived from a video title."""
+    safe = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    return safe[:100]
 
 
 @click.command()
@@ -197,6 +203,8 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
 
         # Step 2: Download audio (or use cache)
         audio_file = None
+        temp_audio_file = None  # freshly downloaded file in temp/ — cleaned up at the end
+        chunks = None           # audio chunks, if created — cleaned up at the end
 
         if cached_audio:
             console.print(f"\n[green]✓[/green] Using cached audio")
@@ -223,9 +231,10 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
                     sys.exit(1)
 
         # Step 3: Transcribe audio (or use cache)
+        # NOTE: temp_audio_file/chunks are initialized BEFORE the download step —
+        # re-initializing them here used to wipe the download tracking, so the
+        # cleanup at the end could never delete the freshly downloaded audio.
         transcript = None
-        chunks = None  # Track chunks for cleanup
-        temp_audio_file = None  # Track temp audio for cleanup
 
         if cached_transcript:
             console.print(f"\n[green]✓[/green] Using cached transcript")
@@ -294,10 +303,7 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
         # Save transcript to output files
         if save_transcript and transcript:
             try:
-                # Create safe filename from video title
-                safe_title = "".join(c for c in video_info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
-                safe_title = safe_title[:100]  # Limit length
-
+                safe_title = safe_filename(video_info['title'])
                 transcript_txt = Path("output") / f"{safe_title}_transcript.txt"
                 transcript_json = Path("output") / f"{safe_title}_transcript.json"
 
@@ -315,7 +321,7 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
             TextColumn("[progress.description]{task.description}"),
             console=console
         ) as progress:
-            model_name = "Gemini" if provider == "gemini" else "GPT-4"
+            model_name = "Gemini" if provider == "gemini" else config['topic_analysis']['model']
             task = progress.add_task(f"[cyan]Analyzing topics with {model_name}...", total=None)
 
             try:
@@ -327,7 +333,7 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
                 console.print(f"[red]Error: {e}[/red]")
                 sys.exit(1)
 
-        # Step 6: Format output
+        # Step 5: Format output
         console.print("\n[yellow]Formatting timestamps...[/yellow]")
 
         if output_format == 'youtube':
@@ -345,16 +351,11 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
         elif output_format == 'json':
             output_text = formatter.format_as_json(topics)
 
-        # Step 7: Save output
+        # Step 6: Save output
         # If using default output path, generate unique filename from video title
         if output == 'output/timestamps.txt':
-            # Create safe filename from video title
-            safe_title = "".join(c for c in video_info['title'] if c.isalnum() or c in (' ', '-', '_')).strip()
-            safe_title = safe_title[:100]  # Limit length
-
-            # Determine extension based on format
             extension = '.txt' if output_format != 'json' else '.json'
-            output_path = Path("output") / f"{safe_title}_timestamps{extension}"
+            output_path = Path("output") / f"{safe_filename(video_info['title'])}_timestamps{extension}"
         else:
             output_path = Path(output)
 
@@ -363,7 +364,7 @@ def main(url, output, min_duration, output_format, save_transcript, qa_mode, for
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(output_text)
 
-        console.print(f"[green]✓[/green] Timestamps saved to: {output}")
+        console.print(f"[green]✓[/green] Timestamps saved to: {output_path}")
 
         # Display preview
         console.print("\n[bold cyan]Preview:[/bold cyan]")
