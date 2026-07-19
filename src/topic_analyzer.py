@@ -206,48 +206,11 @@ class TopicAnalyzer:
 
         logger.info(f"Q&A section starts at approximately {qa_start_time}s ({qa_start_time/60:.1f} minutes)")
 
-        # Pass 2: Analyze presentation section with standard approach
-        logger.info("Pass 2: Analyzing presentation section...")
-        presentation_topics = []
-
-        if qa_start_time > 300:  # Only if presentation is > 5 minutes
-            # Get presentation portion with 60-second intervals
-            presentation_intervals = [
-                (ts, text) for ts, text in transcriber.get_transcript_at_intervals(transcript, interval=30)
-                if ts < qa_start_time
-            ]
-
-            if presentation_intervals:
-                pres_transcript = self._format_for_gpt(presentation_intervals)
-                pres_prompt = self._create_presentation_prompt(pres_transcript, video_title, qa_start_time)
-
-                try:
-                    logger.info(f"Calling {self.model} for presentation analysis")
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": "You analyze presentation content to identify major sections."},
-                            {"role": "user", "content": pres_prompt}
-                        ],
-                        temperature=self.temperature,
-                        response_format={"type": "json_object"}
-                    )
-
-                    content = response.choices[0].message.content
-                    self._save_debug("gpt_presentation_response.json", content)
-                    presentation_topics = self._parse_gpt_response(content)
-
-                    # Filter out any timestamps beyond Q&A start or video duration
-                    presentation_topics = [(ts, desc) for ts, desc in presentation_topics if ts < qa_start_time and ts <= video_duration]
-
-                    logger.info(f"✓ Identified {len(presentation_topics)} presentation chapters")
-                except Exception as e:
-                    logger.warning(f"Presentation analysis failed: {e}")
-                    presentation_topics = [(0, "Presentation")]
-            else:
-                presentation_topics = [(0, "Presentation")]
-        else:
-            presentation_topics = [(0, "Presentation")]
+        # Pass 2: single fixed presentation chapter. GPT topical analysis
+        # produced generic titles with minute-rounded times nobody used
+        # (Craig, 2026-07-19: "change topicals to 'start of presentation'
+        # and get rid of the others") — the Q&A stamps are the value here.
+        presentation_topics = [(0, "Start of presentation")]
 
         # Pass 3: Analyze Q&A section in detail with dense intervals
         logger.info("Pass 3: Analyzing Q&A section for individual questions...")
