@@ -213,7 +213,7 @@ class TopicAnalyzer:
         if qa_start_time > 300:  # Only if presentation is > 5 minutes
             # Get presentation portion with 60-second intervals
             presentation_intervals = [
-                (ts, text) for ts, text in transcriber.get_transcript_at_intervals(transcript, interval=60)
+                (ts, text) for ts, text in transcriber.get_transcript_at_intervals(transcript, interval=30)
                 if ts < qa_start_time
             ]
 
@@ -297,6 +297,11 @@ class TopicAnalyzer:
             invalid_count = len(qa_topics_all) - len(qa_topics)
             if invalid_count > 0:
                 logger.warning(f"Filtered out {invalid_count} Q&A timestamps beyond video duration ({video_duration}s)")
+
+            # Snap bucketed stamps to word-level times (questions are accurate;
+            # the 15s bucket markers are not — see refine_question_timestamps).
+            qa_topics = self.refine_question_timestamps(qa_topics, transcript)
+            logger.info("✓ Refined Q&A timestamps against word-level transcript")
 
             # Combine: presentation topics + Q&A marker + Q&A topics
             final_topics = presentation_topics + [(int(qa_start_time), "Q&A begins")] + qa_topics
@@ -536,6 +541,73 @@ CRITICAL:
 {GLOSSARY_NOTE}"""
 
         return prompt
+
+
+    # Filler/stop words ignored when aligning question text to transcript words.
+    _ALIGN_STOP = {
+        'the', 'and', 'for', 'you', 'your', 'about', 'with', 'that', 'this',
+        'have', 'has', 'had', 'are', 'was', 'were', 'been', 'being', 'how',
+        'what', 'when', 'where', 'why', 'who', 'which', 'would', 'could',
+        'can', 'do', 'does', 'did', 'any', 'all', 'them', 'they', 'their',
+        'there', 'here', 'more', 'most', 'some', 'these', 'those', 'from',
+        'into', 'out', 'over', 'under', 'between', 'after', 'before', 'given',
+        'see', 'feel', 'think', 'talk', 'like', 'get', 'got', 'yourself',
+    }
+
+    @classmethod
+    def _align_keywords(cls, text):
+        import re as _re
+        toks = _re.findall(r"[a-z0-9']+", text.lower())
+        return [t for t in toks if len(t) > 2 and t not in cls._ALIGN_STOP]
+
+    @classmethod
+    def refine_question_timestamps(cls, qa_topics, transcript,
+                                   window_before=25, window_after=75,
+                                   lead_in=2, min_score=0.35):
+        """Snap coarse question timestamps to the exact spoken moment.
+
+        The Q&A transcript GPT reads is bucketed into 15s lines, so its
+        markers are bucket STARTS — each stamp can be a bucket or so off.
+        Whisper gave us word-level times; GPT gave us accurate question
+        text. Slide a window over the transcript words around each coarse
+        stamp, score content-word overlap with the question, and take the
+        best window's first-word time (minus a small lead-in). A weak match
+        keeps the GPT stamp rather than guessing.
+        """
+        words = transcript.get('words') or []
+        if not words:
+            return qa_topics
+
+        refined = []
+        for ts, desc in qa_topics:
+            qwords = cls._align_keywords(desc)
+            if len(qwords) < 3:
+                refined.append((ts, desc))
+                continue
+            qset = set(qwords)
+            cand = [w for w in words
+                    if ts - window_before <= w['start'] <= ts + window_after]
+            span = max(10, len(qwords) * 3)  # reading a question paraphrases/pads
+            best_score, best_start = 0.0, None
+            for i in range(len(cand)):
+                seg = cand[i:i + span]
+                if len(seg) < 5:
+                    break
+                segset = set(cls._align_keywords(
+                    ' '.join(w['word'] for w in seg)))
+                score = len(qset & segset) / len(qset)
+                if score > best_score:
+                    best_score, best_start = score, seg[0]['start']
+            if best_start is not None and best_score >= min_score:
+                new_ts = max(0, int(best_start) - lead_in)
+                if abs(new_ts - ts) <= window_after:
+                    logger.debug(
+                        f"refined Q stamp {ts}s -> {new_ts}s "
+                        f"(score {best_score:.2f}): {desc[:50]}")
+                    ts = new_ts
+            refined.append((ts, desc))
+        refined.sort(key=lambda x: x[0])
+        return refined
 
     def _create_qa_detail_prompt(
         self,
