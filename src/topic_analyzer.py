@@ -19,6 +19,7 @@ SPELLING NOTES — the transcript may mishear these; always write them as:
 - "TBOT" (book / fine-art edition; transcript may say "T Bot" or "T-bot")
 - "Ridgeline" and "Roden" (two separate newsletters; transcript may run them together as "Ridgeline Rodent")
 - "Uniqlo" (not "Uniclo")
+- "kissaten" / "jazz kissa" (Japanese coffee shops; transcript may say "Kisaten" or "Jazz Keys")
 """
 
 
@@ -641,10 +642,14 @@ INSTRUCTIONS:
    - Speaker starting to address a new topic
 3. Extract or infer the actual question being asked
 4. Even if the question isn't read aloud, infer it from the answer
-5. Format: "Q: [actual question]" - be specific about what's being asked
-6. For each question, find the [MM:SS] marker in the transcript where it starts
-7. Return that EXACT [MM:SS] marker in the "time_marker" field - DO NOT convert to seconds yourself
-8. Include ALL questions - don't skip any
+5. PHRASE QUESTIONS IN SECOND PERSON — they are asked TO the speaker, who
+   reads them aloud in first person. "What lens do I use" (speaker reading)
+   must become "What lens do you use". Keep first person ONLY where the
+   asker describes their own situation ("I'm visiting Japan in November...")
+6. Format: "Q: [actual question]" - be specific about what's being asked
+7. For each question, find the [MM:SS] marker in the transcript where it starts
+8. Return that EXACT [MM:SS] marker in the "time_marker" field - DO NOT convert to seconds yourself
+9. Include ALL questions - don't skip any
 
 Q&A TRANSCRIPT (with 15-second precision):
 {qa_transcript}
