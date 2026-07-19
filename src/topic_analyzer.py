@@ -11,6 +11,16 @@ try:
 except ImportError:
     GEMINI_AVAILABLE = False
 
+# Proper nouns the transcript reliably mangles — injected into the prompts
+# that write chapter/Q&A descriptions so they come out right without manual
+# post-editing. Add new mishearings here as they surface.
+GLOSSARY_NOTE = """
+SPELLING NOTES — the transcript may mishear these; always write them as:
+- "TBOT" (book / fine-art edition; transcript may say "T Bot" or "T-bot")
+- "Ridgeline" and "Roden" (two separate newsletters; transcript may run them together as "Ridgeline Rodent")
+- "Uniqlo" (not "Uniclo")
+"""
+
 
 class TopicAnalyzer:
     """Analyze transcript to identify topic changes and generate timestamps."""
@@ -499,7 +509,8 @@ TASK: Identify major sections and topic changes in the presentation.
 
 INSTRUCTIONS:
 1. Create timestamps for significant topic changes in the presentation
-2. Use descriptive section titles that capture what's being discussed
+2. Keep section titles SHORT — one to three words (e.g. "Introduction",
+   "Major Events", "Monthly Breakdown", "Future Plans"), not full phrases
 3. Don't create too many timestamps - focus on major sections only
 4. Timestamps must be in SECONDS (integers) based on [MM:SS] markers
 5. Always start with timestamp 0
@@ -521,7 +532,8 @@ CRITICAL:
 - Focus on major sections, not every small detail
 - Use the [MM:SS] markers to get exact timestamps
 - Convert to seconds (e.g., [07:00] = 420 seconds)
-- Return ONLY JSON"""
+- Return ONLY JSON
+{GLOSSARY_NOTE}"""
 
         return prompt
 
@@ -587,7 +599,8 @@ CRITICAL:
 - Return the LITERAL [MM:SS] marker from the transcript (e.g., "[40:15]")
 - DO NOT convert to seconds - just copy the marker exactly as it appears
 - Be specific in descriptions
-- Return ONLY JSON"""
+- Return ONLY JSON
+{GLOSSARY_NOTE}"""
 
         return prompt
 
