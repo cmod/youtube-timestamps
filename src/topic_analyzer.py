@@ -198,7 +198,8 @@ class TopicAnalyzer:
         logger.info(f"Video duration: {video_duration}s ({video_duration/60:.1f} minutes)")
         broad_intervals = transcriber.get_transcript_at_intervals(transcript, interval=120)  # 2-minute intervals
 
-        qa_start_time = self._find_qa_start(broad_intervals, video_title, video_duration)
+        qa_start_time, pres_start = self._find_qa_start(
+            broad_intervals, video_title, video_duration, transcript)
 
         if qa_start_time is None:
             logger.warning("Could not identify Q&A start, analyzing entire video")
@@ -206,11 +207,16 @@ class TopicAnalyzer:
 
         logger.info(f"Q&A section starts at approximately {qa_start_time}s ({qa_start_time/60:.1f} minutes)")
 
-        # Pass 2: single fixed presentation chapter. GPT topical analysis
-        # produced generic titles with minute-rounded times nobody used
-        # (Craig, 2026-07-19: "change topicals to 'start of presentation'
-        # and get rid of the others") — the Q&A stamps are the value here.
-        presentation_topics = [(0, "Start of presentation")]
+        # Pass 2: fixed chapters — no GPT topical analysis (it produced
+        # generic titles nobody used; the Q&A stamps are the value here).
+        # Board meetings open with a few minutes of warmup / waiting for
+        # folks to join, so when Pass 1 found where the talk proper begins,
+        # chapter it (YouTube requires chapter #1 at 0:00, hence "Warmup").
+        if pres_start and 45 <= pres_start < (qa_start_time or video_duration):
+            presentation_topics = [(0, "Warmup / waiting"),
+                                   (int(pres_start), "Start of presentation")]
+        else:
+            presentation_topics = [(0, "Start of presentation")]
 
         # Pass 3: Analyze Q&A section in detail with dense intervals
         logger.info("Pass 3: Analyzing Q&A section for individual questions...")
@@ -371,60 +377,57 @@ class TopicAnalyzer:
         self,
         intervals: List[Tuple[float, str]],
         video_title: str,
-        video_duration: int = 0
-    ) -> Optional[int]:
-        """Find where Q&A section starts.
-
-        Args:
-            intervals: List of (timestamp, text) tuples
-            video_title: Video title
-            video_duration: Total video duration in seconds (for validation)
+        video_duration: int = 0,
+        transcript: Dict = None
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Find where the presentation proper and the Q&A session begin.
 
         Returns:
-            Timestamp in seconds where Q&A starts, or None
+            (qa_start_seconds, presentation_start_seconds) — either may be
+            None when not confidently detected.
         """
-        # Condensed transcript for Q&A detection. Use ALL 2-minute intervals —
-        # a 2h video is only ~60 lines, easily within context, and capping at
-        # the first hour used to mis-detect Q&A start on longer presentations.
+        # Condensed transcript for boundary detection. Use ALL 2-minute
+        # intervals — a 2h video is only ~60 lines, easily within context.
         condensed = self._format_for_gpt(intervals)
 
         # NOTE: we ask for the LITERAL [MM:SS] marker and convert ourselves —
         # asking the model to convert to seconds produced wildly wrong values
-        # (e.g. 13500s on a 90-minute video), same lesson as the QA-detail
-        # prompt.
-        prompt = f"""Analyze this video transcript to find where the Q&A session begins.
+        # (e.g. 13500s on a 90-minute video). The verbatim "quote" lets us
+        # snap the coarse 2-minute marker to the exact spoken word.
+        prompt = f"""Analyze this video transcript to find two boundaries.
 
 Video Title: {video_title}
 
-The video has a presentation followed by a Q&A session. Find where Q&A starts.
-Look for phrases like:
-- "questions"
-- "Q&A"
-- "let's take some questions"
-- "open it up for questions"
-- "anyone have questions"
-- Speaker starts answering questions
+1. PRESENTATION START: videos open with warmup — waiting for people to
+   join, casual chat, screen fiddling. Find where the speaker actually
+   begins the presentation proper (phrases like "let's get going",
+   "thus begins", "welcome to the board meeting", a shift into prepared
+   content).
+2. Q&A START: where the Q&A session begins — "questions", "Q&A",
+   "let's take some questions", the speaker starts answering audience
+   questions.
 
 Transcript (each line begins with its [MM:SS] marker):
 {condensed}
 
-Return JSON with the Q&A start:
+Return JSON:
 {{
-  "time_marker": "[36:00]",
-  "confidence": "high",
-  "indicator": "Speaker says 'let's open it up for questions'"
+  "presentation_start": {{"time_marker": "[04:00]", "quote": "verbatim words spoken at that moment", "confidence": "high"}},
+  "qa_start": {{"time_marker": "[36:00]", "quote": "verbatim words spoken at that moment", "confidence": "high"}}
 }}
 
 CRITICAL:
-- Return the LITERAL [MM:SS] marker from the transcript line where Q&A begins
+- Return the LITERAL [MM:SS] marker from the transcript line where each begins
 - DO NOT convert to seconds - just copy the marker exactly as it appears
-- If you cannot find clear Q&A indicators, return null for time_marker"""
+- "quote" is a short verbatim phrase (5-12 words) copied from the transcript
+  AT that boundary — it is used to pin the exact second
+- If a boundary cannot be found, use null for its time_marker"""
 
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You identify where Q&A sections begin in video transcripts."},
+                    {"role": "system", "content": "You identify structural boundaries (presentation start, Q&A start) in video transcripts."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -434,23 +437,53 @@ CRITICAL:
             content = response.choices[0].message.content
             data = json.loads(content)
 
-            marker = data.get('time_marker') or data.get('qa_start_seconds')
-            if marker is not None:
-                qa_start = self._parse_timestamp(str(marker).strip().strip('[]'))
-                # Sanity check: a start beyond the video means the model
-                # hallucinated — treat as detection failure, not truth.
-                if video_duration and qa_start > video_duration:
-                    logger.warning(
-                        f"Q&A start {qa_start}s is beyond video duration "
-                        f"{video_duration}s — ignoring detection")
-                    return None
-                logger.info(f"Detected Q&A start: {data.get('indicator', 'unknown indicator')}")
-                return int(qa_start)
+            def _boundary(key):
+                node = data.get(key)
+                if not isinstance(node, dict) or node.get('time_marker') is None:
+                    return None, None
+                ts = self._parse_timestamp(
+                    str(node['time_marker']).strip().strip('[]'))
+                if video_duration and ts > video_duration:
+                    logger.warning(f"{key} {ts}s is beyond video duration "
+                                   f"{video_duration}s — ignoring detection")
+                    return None, None
+                return int(ts), (node.get('quote') or '').strip()
+
+            def _snap(ts, quote):
+                """2-minute bucket markers are coarse; align the verbatim
+                quote against word-level times to pin the exact second."""
+                if ts is None or not quote or not (transcript or {}).get('words'):
+                    return ts
+                refined = self.refine_question_timestamps(
+                    [(ts, quote)], transcript,
+                    window_before=130, window_after=150,
+                    lead_in=1, min_score=0.5)
+                return refined[0][0]
+
+            qa_start, qa_quote = _boundary('qa_start')
+            pres_start, pres_quote = _boundary('presentation_start')
+
+            # Legacy single-marker shape, just in case the model regresses.
+            if qa_start is None and data.get('time_marker'):
+                qa_start = int(self._parse_timestamp(
+                    str(data['time_marker']).strip().strip('[]')))
+                qa_quote = ''
+
+            qa_start = _snap(qa_start, qa_quote)
+            pres_start = _snap(pres_start, pres_quote)
+
+            if qa_start is not None:
+                logger.info(f"Detected Q&A start {qa_start}s "
+                            f"(quote: {qa_quote[:60]!r})")
+            if pres_start is not None:
+                logger.info(f"Detected presentation start {pres_start}s "
+                            f"(quote: {pres_quote[:60]!r})")
+            return qa_start, pres_start
 
         except Exception as e:
-            logger.warning(f"Failed to detect Q&A start: {e}")
+            logger.warning(f"Failed to detect video boundaries: {e}")
 
-        return None
+        return None, None
 
     def _create_presentation_prompt(
         self,
