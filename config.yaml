@@ -6,7 +6,7 @@ transcription:
   language: null  # Auto-detect language
 
 topic_analysis:
-  model: gpt-4o  # Alternative: gpt-4o-mini for (much) lower cost
+  model: gpt-5.4-mini  # Alternative: gpt-5.5 for max quality
   temperature: 0.3
   min_topic_duration: 30  # Minimum seconds between topics
 
