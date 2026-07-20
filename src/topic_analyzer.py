@@ -140,8 +140,8 @@ class TopicAnalyzer:
                         "content": prompt
                     }
                 ],
-                temperature=self.temperature,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                **self._sampling_kwargs()
             )
 
             # Parse response
@@ -253,8 +253,8 @@ class TopicAnalyzer:
                         "content": prompt
                     }
                 ],
-                temperature=self.temperature,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                **self._sampling_kwargs()
             )
 
             content = response.choices[0].message.content
@@ -374,6 +374,16 @@ class TopicAnalyzer:
             logger.warning("Falling back to time-based chapters")
             return self._create_fallback_chapters(transcript)
 
+    def _sampling_kwargs(self, temperature=None):
+        """Extra chat.completions kwargs the current model accepts.
+
+        GPT-5.x reasoning models reject custom temperature; older chat
+        models (gpt-4o era) still take it. Centralized so a model swap in
+        config.yaml can't 400 every analysis call."""
+        if self.model.startswith(('gpt-5', 'o')):
+            return {}
+        return {'temperature': self.temperature if temperature is None else temperature}
+
     def _find_qa_start(
         self,
         intervals: List[Tuple[float, str]],
@@ -431,8 +441,8 @@ CRITICAL:
                     {"role": "system", "content": "You identify structural boundaries (presentation start, Q&A start) in video transcripts."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
-                response_format={"type": "json_object"}
+                response_format={"type": "json_object"},
+                **self._sampling_kwargs(0.3)
             )
 
             content = response.choices[0].message.content
