@@ -8,7 +8,7 @@ Here you go:
 
 Generate chapter timestamps for any YouTube video — just give it a URL.
 
-Transcribes with OpenAI Whisper, analyzes topics with GPT-4, and outputs YouTube-ready chapter markers you can paste directly into a video description.
+Transcribes with OpenAI Whisper, analyzes structure with GPT-4o, and outputs YouTube-ready chapter markers you can paste directly into a video description.
 
 ```
 00:00:00 - Welcome
@@ -23,8 +23,9 @@ Transcribes with OpenAI Whisper, analyzes topics with GPT-4, and outputs YouTube
 ## Features
 
 - **Automatic transcription** using OpenAI Whisper API
-- **Intelligent topic detection** using GPT-4 to identify chapter boundaries
-- **Q&A mode** — specialized for presentation + Q&A videos with per-question timestamps
+- **Intelligent topic detection** using GPT-4o to identify chapter boundaries
+- **Q&A mode (default)** — presentation + Q&A videos get warmup / presentation / Q&A boundary chapters and a timestamp for every question
+- **Word-level accuracy** — question and boundary stamps are snapped to Whisper's word timestamps, not left at coarse transcript-bucket markers
 - **YouTube-ready format** — paste directly into video descriptions
 - **Full transcript saving** — text and JSON formats with timestamps
 - **Persistent caching** — saves audio & transcripts by video ID for instant re-analysis
@@ -98,7 +99,8 @@ Options:
   -f, --format [youtube|markdown|json]  Output format (default: youtube)
   --save-transcript / --no-save-transcript
                                         Save full transcript to file (default: enabled)
-  --qa-mode                             Optimize for presentation + Q&A format
+  --qa-mode / --no-qa-mode              Optimize for presentation + Q&A format
+                                        (default: enabled)
   --provider [openai|gemini]            AI provider for analysis (default: openai)
   --force-reprocess                     Force re-download and re-transcription (ignore cache)
   --keep-files                          Keep temporary audio files
@@ -126,8 +128,8 @@ uv run python main.py "URL" --min-duration 45
 # Use Gemini instead of GPT-4 for analysis
 uv run python main.py "URL" --provider gemini
 
-# Presentation + Q&A video
-uv run python main.py "URL" --qa-mode
+# Plain topical chapters (Q&A mode is on by default)
+uv run python main.py "URL" --no-qa-mode
 
 # Skip saving the transcript
 uv run python main.py "URL" --no-save-transcript
@@ -138,11 +140,19 @@ uv run python main.py "URL" --force-reprocess
 
 ## Q&A Mode
 
-For videos with a **presentation followed by audience Q&A**, use `--qa-mode` for detailed question-level timestamps.
+Q&A mode is **on by default** — it's built for videos with a **presentation followed by audience Q&A**. Use `--no-qa-mode` for plain topical chapters instead.
 
-**Two-pass analysis:**
-1. Locates where Q&A begins in the video
-2. Densely samples the Q&A section to find each individual question
+**How it works:**
+1. One boundary pass finds where the presentation proper begins (after the
+   waiting-for-people warmup) and where Q&A starts — each pinned to the exact
+   spoken phrase via word-level timestamps
+2. The Q&A section is densely sampled to identify every individual question
+3. Each question's timestamp is then snapped to the words of the question in
+   the transcript (bucket markers alone are up to ~15s off)
+
+Questions are phrased in second person ("What lens do you use…") even when the
+speaker reads them aloud in first person, and a small spelling glossary in
+`src/topic_analyzer.py` fixes proper nouns the transcript reliably mishears.
 
 **Without Q&A mode** (generic chapters):
 ```
@@ -154,7 +164,8 @@ For videos with a **presentation followed by audience Q&A**, use `--qa-mode` for
 
 **With Q&A mode** (per-question timestamps):
 ```
-00:00:00 - Walking 1000km across Japan
+00:00:00 - Warmup / waiting
+00:04:12 - Start of presentation
 00:47:23 - Q&A begins
 00:47:58 - Q: How do you decide when a photo is finished?
 00:51:30 - Q: What camera gear did you carry for 1000km?
@@ -201,7 +212,7 @@ transcription:
   model: whisper-1
 
 topic_analysis:
-  model: gpt-4-turbo-preview  # or gpt-3.5-turbo for lower cost
+  model: gpt-4o               # or gpt-4o-mini for lower cost
   temperature: 0.3
   min_topic_duration: 30      # seconds between chapters
 
@@ -213,7 +224,7 @@ audio:
 ## Cost Estimate
 
 - **Whisper API**: $0.006/minute of audio
-- **GPT-4 analysis**: ~$0.02/video (consistent regardless of length)
+- **GPT-4o analysis**: ~$0.02/video (consistent regardless of length)
 
 | Video length | Estimated cost |
 |-------------|----------------|
@@ -300,7 +311,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 Built with:
 - [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) — speech-to-text transcription
-- [OpenAI GPT-4](https://platform.openai.com/docs/models) — topic analysis
+- [OpenAI GPT-4o](https://platform.openai.com/docs/models) — structure & topic analysis
 - [Google Gemini](https://ai.google.dev/) — optional alternative for analysis
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) — YouTube audio download
 - [pydub](https://github.com/jiaaro/pydub) — audio processing
