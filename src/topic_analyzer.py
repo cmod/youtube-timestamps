@@ -20,6 +20,7 @@ SPELLING NOTES — the transcript may mishear these; always write them as:
 - "Ridgeline" and "Roden" (two separate newsletters; transcript may run them together as "Ridgeline Rodent")
 - "Uniqlo" (not "Uniclo")
 - "kissaten" / "jazz kissa" (Japanese coffee shops; transcript may say "Kisaten" or "Jazz Keys")
+- "Mailbot" (Craig's newsletter tool; transcript may say "Multbot")
 """
 
 
